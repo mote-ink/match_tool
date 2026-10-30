@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>缺勤匹配工具</title>
+<script src="xlsx.full.min.js" onerror="document.getElementById('libError').style.display='block'"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f7fa; color: #333; padding: 24px; min-height: 100vh;
+  }
+  .container { max-width: 1040px; margin: 0 auto; }
+  h1 { text-align: center; font-size: 24px; margin-bottom: 20px; color: #1a73e8; }
+  .lib-error {
+    display: none; background: #fce8e6; color: #c5221f; padding: 12px 16px;
+    border-radius: 8px; margin-bottom: 16px; font-size: 14px; text-align: center;
+  }
+  .upload-row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+  .card {
+    background: #fff; border-radius: 12px; padding: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .card h2 { font-size: 16px; margin-bottom: 12px; color: #555; }
+  .dropzone {
+    border: 2px dashed #c0c8d4; border-radius: 8px; padding: 28px 16px;
+    text-align: center; cursor: pointer; transition: all .2s; background: #fafbfc;
+  }
+  .dropzone:hover, .dropzone.dragover { border-color: #1a73e8; background: #eef4ff; }
+  .dropzone.has-file { border-style: solid; border-color: #34a853; background: #e8f5e9; }
+  .dropzone.has-file.err { border-color: #ea4335; background: #fce8e6; border-style: solid; }
+  .dropzone input { display: none; }
+  .dropzone p { color: #666; font-size: 14px; }
+  .dropzone .fname { color: #34a853; font-weight: 600; margin-top: 6px; word-break: break-all; }
+  .dropzone .meta { font-size: 12px; color: #9aa0a6; margin-top: 4px; }
+  .col-select { margin-top: 14px; display: none; }
+  .col-select.active { display: block; }
+  .col-select label { display: block; font-size: 13px; color: #555; margin-bottom: 4px; }
+  .col-select select {
+    width: 100%; padding: 8px 10px; border: 1px solid #d0d7de; border-radius: 6px;
+    font-size: 14px; background: #fff; margin-bottom: 8px;
+  }
+  .options-bar {
+    display: flex; align-items: center; justify-content: center; gap: 20px;
+    background: #fff; border-radius: 10px; padding: 12px 20px; margin-bottom: 16px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.06); flex-wrap: wrap;
+  }
+  .options-bar label { display: flex; align-items: center; gap: 6px; font-size: 14px; color: #444; cursor: pointer; }
+  .options-bar input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; accent-color: #1a73e8; }
+  .options-bar input[type="radio"] { accent-color: #1a73e8; }
+  .options-bar .mode-group { display: flex; gap: 14px; align-items: center; }
+  .options-bar .tip { font-size: 12px; color: #9aa0a6; }
+  .btn-row { display: flex; justify-content: center; gap: 12px; margin: 20px 0; flex-wrap: wrap; }
+  button {
+    padding: 10px 28px; border: none; border-radius: 8px; font-size: 15px;
+    font-weight: 500; cursor: pointer; transition: all .15s;
+  }
+  .btn-primary { background: #1a73e8; color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: #1557b0; }
+  .btn-primary:disabled { background: #c0c8d4; cursor: not-allowed; }
+  .btn-export { background: #34a853; color: #fff; }
+  .btn-export:hover { background: #2d8e47; }
+  .btn-reset { background: #f1f3f4; color: #555; }
+  .btn-reset:hover { background: #e8eaed; }
+  .btn-apply { background: #7b61ff; color: #fff; }
+  .btn-apply:hover:not(:disabled) { background: #5f48d6; }
+  .btn-apply:disabled { background: #c0c8d4; cursor: not-allowed; }
+  .result-card { display: none; }
+  .result-card.active { display: block; }
+  .summary { display: flex; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+  .stat {
+    flex: 1; min-width: 120px; background: #f8f9fa; border-radius: 8px;
+    padding: 14px; text-align: center;
+  }
+  .stat .num { font-size: 28px; font-weight: 700; }
+  .stat .label { font-size: 13px; color: #666; margin-top: 4px; }
+  .stat.absent .num { color: #ea4335; }
+  .stat.present .num { color: #34a853; }
+  .stat.extra .num { color: #fbbc04; }
+  .stat.fuzzy .num { color: #7b61ff; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 8px; }
+  th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #eee; word-break: break-word; }
+  th { background: #f8f9fa; font-weight: 600; color: #555; }
+  tr:hover td { background: #fafbfc; }
+  .empty { text-align: center; padding: 30px; color: #9aa0a6; font-size: 14px; }
+  .section-title { font-size: 15px; font-weight: 600; margin: 16px 0 8px; color: #333; }
+  .fuzzy-reason {
+    font-size: 12px; color: #7b61ff; background: #f0ebff; padding: 2px 8px;
+    border-radius: 10px; white-space: nowrap;
+  }
+  .fuzzy-candidate-row {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+    border: 1px solid #e0d8ff; border-radius: 8px; margin-bottom: 8px; background: #faf8ff;
+  }
+  .fuzzy-candidate-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #7b61ff; cursor: pointer; }
+  .fuzzy-candidate-row .arrow { color: #9aa0a6; font-size: 18px; margin: 0 4px; }
+  .fuzzy-candidate-row .name { font-weight: 500; }
+  .fuzzy-candidate-row .sub { font-size: 12px; color: #9aa0a6; margin-left: 4px; }
+
+  .banner {
+    background: #fff7e0; border: 1px solid #fdd663; color: #8a5300; padding: 10px 14px;
+    border-radius: 8px; font-size: 13px; margin-bottom: 16px; display: flex;
+    justify-content: space-between; align-items: center;
+  }
+  .banner button {
+    padding: 4px 14px; font-size: 12px; background: #b06000; color: #fff; border-radius: 6px;
+  }
+  .mode-hint { font-size: 12px; color: #9aa0a6; margin-top: 6px; }
+  @media (max-width: 700px) { .upload-row { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>缺勤匹配工具</h1>
+  <div class="lib-error" id="libError">⚠️ Excel 库加载失败，请检查同目录下的 xlsx.full.min.js 文件是否存在。</div>
+
+  <div id="draftBanner" class="banner" style="display:none">
+    <span>已恢复上次的匹配草稿（文件名与列选择）。</span>
+    <div>
+      <button onclick="clearDraft(); document.getElementById('draftBanner').style.display='none'">丢弃草稿</button>
+    </div>
+  </div>
+
+  <div class="upload-row">
+    <div class="card">
+      <h2>📋 应到名单</h2>
+      <div class="dropzone" id="dz1">
+        <input type="file" id="file1" accept=".xlsx,.xls,.csv">
+        <p>点击或拖放文件到此处</p>
+        <p style="font-size:12px;margin-top:4px">支持 .xlsx / .xls / .csv</p>
+        <div class="fname" id="fname1"></div>
+        <div class="meta" id="meta1"></div>
+      </div>
+      <div class="col-select" id="cols1">
+        <label>姓名列</label>
+        <select id="nameCol1"></select>
+        <label>编号列（工号/学号，可选）</label>
+        <select id="idCol1"><option value="">（不使用）</option></select>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>✅ 签到名单</h2>
+      <div class="dropzone" id="dz2">
+        <input type="file" id="file2" accept=".xlsx,.xls,.csv">
+        <p>点击或拖放文件到此处</p>
+        <p style="font-size:12px;margin-top:4px">支持 .xlsx / .xls / .csv</p>
+        <div class="fname" id="fname2"></div>
+        <div class="meta" id="meta2"></div>
+      </div>
+      <div class="col-select" id="cols2">
+        <label>姓名列</label>
+        <select id="nameCol2"></select>
+        <label>编号列（工号/学号，可选）</label>
+        <select id="idCol2"><option value="">（不使用）</option></select>
+      </div>
+    </div>
+  </div>
+
+  <div class="options-bar">
+    <label>
+      <input type="checkbox" id="fuzzyOn" checked>
+      启用模糊匹配
+    </label>
+    <div class="mode-group">
+      <span class="tip">· 编号冲突模式：</span>
+      <label><input type="radio" name="idMode" value="strict">严格（编号不同=待确认）</label>
+      <label><input type="radio" name="idMode" value="lenient" checked>宽松（仅编号缺失时用姓名）</label>
+      <label><input type="radio" name="idMode" value="nameonly">仅姓名（忽略编号）</label>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn-primary" id="matchBtn" disabled>🔍 开始匹配</button>
+    <button class="btn-reset" id="resetBtn">重置</button>
+  </div>
+
+  <div class="card result-card" id="resultCard">
+    <div class="summary">
+      <div class="stat"><div class="num" id="statTotalShould">0</div><div class="label">应到人数</div></div>
+      <div class="stat present"><div class="num" id="statPresent">0</div><div class="label">已签到</div></div>
+      <div class="stat absent"><div class="num" id="statAbsent">0</div><div class="label">缺勤人数</div></div>
+      <div class="stat extra"><div class="num" id="statExtra">0</div><div class="label">额外签到</div></div>
+      <div class="stat fuzzy" id="statFuzzyWrap" style="display:none"><div class="num" id="statFuzzy">0</div><div class="label">待确认</div></div>
+    </div>
+
+    <div id="fuzzySection" style="display:none">
+      <div class="section-title">🔎 待确认/模糊匹配候选（勾选确认后应用）</div>
+      <div id="fuzzyList"></div>
+      <div class="btn-row">
+        <button class="btn-apply" id="applyFuzzyBtn" disabled>✅ 应用已选配对，更新结果</button>
+      </div>
+    </div>
+
+    <div id="absentSection">
+      <div class="section-title">🚫 缺勤名单（应到未签到）</div>
+      <div id="absentList"></div>
+    </div>
+    <div id="extraSection">
+      <div class="section-title">⚠️ 额外签到（签到名单有但不在应到名单里）</div>
+      <div id="extraList"></div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-export" id="exportBtn">📥 导出结果 Excel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============== XSS 安全工具 ==============
+function escapeHtml(s) {
+  if (s === null || s === undefined) return '';
+  return String(s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// ============== 状态 ==============
+const state = {
+  should: { rows: [], headers: [], fileName: '', sheetName: '', validCount: 0, ignoredCount: 0 },
+  signIn: { rows: [], headers: [], fileName: '', sheetName: '', validCount: 0, ignoredCount: 0 },
+  fuzzyOn: true,
+  idMode: 'lenient', // strict | lenient | nameonly
+  appliedFuzzyShouldIdx: new Set(),
+  appliedFuzzySignInIdx: new Set(),
+  result: null
+};
+const DRAFT_KEY = 'absence_tool_draft_v1';
+
+// ============== 归一化 ==============
+function normalize(v) {
+  if (v === null || v === undefined) return '';
+  let s = String(v);
+  s = s.replace(/[\uFF01-\uFF5E]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xFEE0));
+  s = s.replace(/\u3000/g, ' ');
+  s = s.toLowerCase().trim();
+  s = s.replace(/[（(【\[][^）)\]】]*[）)\]】]/g, '');
+  s = s.replace(/\s+/g, '');
+  return s;
+}
+function normalizeId(v) {
+  const s = normalize(v);
+  // 仅用字符串去前导 0，避免 parseInt 丢失长数字精度
+  return s.replace(/^0+(?=\d)/, '');
+}
+function levenshtein(a, b) {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const prev = Array.from({length: b.length + 1}, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const curr = [i];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i-1] === b[j-1] ? 0 : 1;
+      curr[j] = Math.min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost);
+    }
+    prev.splice(0, prev.length, ...curr);
+  }
+  return prev[b.length];
+}
+
+// ============== 文件读取 ==============
+function setupDropzone(dzId, fileId, fnameId, colsId, nameSelId, idSelId, target, metaId) {
+  const dz = document.getElementById(dzId);
+  const input = document.getElementById(fileId);
+  const fname = document.getElementById(fnameId);
+  const cols = document.getElementById(colsId);
+  const nameSel = document.getElementById(nameSelId);
+  const idSel = document.getElementById(idSelId);
+  const meta = document.getElementById(metaId);
+
+  dz.addEventListener('click', () => input.click());
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault();
+    dz.classList.remove('dragover');
+    if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+  });
+  input.addEventListener('change', () => { if (input.files.length) handleFile(input.files[0]); });
+
+  // 列变化 → 失效旧结果
+  nameSel.addEventListener('change', invalidateResult);
+  idSel.addEventListener('change', invalidateResult);
+
+  function handleFile(file) {
+    fname.textContent = file.name;
+    dz.classList.add('has-file');
+    dz.classList.remove('err');
+    invalidateResult();
+    const reader = new FileReader();
+    reader.onerror = () => {
+      dz.classList.add('err');
+      fname.textContent = '读取失败';
+      meta.textContent = '';
+      alert('文件读取失败：' + (reader.error ? reader.error.message : '未知错误'));
+    };
+    reader.onload = e => {
+      try {
+        const data = new Uint8Array(e.target.result);
+        let wb;
+        if (/\.csv$/i.test(file.name)) {
+          let text = new TextDecoder('utf-8').decode(data);
+          if (text.includes('\uFFFD')) {
+            try { text = new TextDecoder('gbk').decode(data); } catch (err) {}
+          }
+          // raw: true 保留所有单元格为原始字符串，避免长数字/编号被当 JS number 丢精度
+          wb = XLSX.read(text, { type: 'string', raw: true });
+        } else {
+          wb = XLSX.read(data, { type: 'array' });
+        }
+        if (!wb.SheetNames || !wb.SheetNames.length) {
+          throw new Error('文件没有任何工作表');
+        }
+        const sheetName = wb.SheetNames[0];
+        const ws = wb.Sheets[sheetName];
+        const json = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
+        if (json.length < 2) {
+          dz.classList.add('err');
+          alert('文件内容为空或只有表头，没有数据行');
+          return;
+        }
+        const headers = json[0].map(String);
+        const rows = json.slice(1);
+        state[target].headers = headers;
+        state[target].rows = rows;
+        state[target].fileName = file.name;
+        state[target].sheetName = sheetName;
+        populateSelects(headers, nameSel, idSel);
+        cols.classList.add('active');
+        meta.textContent = `工作表：${sheetName} · ${rows.length} 行数据`;
+        checkReady();
+        saveDraft();
+        tryLoadDraftIfReady();
+      } catch (err) {
+        dz.classList.add('err');
+        fname.textContent = '解析失败';
+        meta.textContent = '';
+        alert('文件解析失败：' + err.message + '\n请检查文件是否损坏或格式不正确。');
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+}
+
+function populateSelects(headers, nameSel, idSel) {
+  nameSel.innerHTML = '';
+  idSel.innerHTML = '<option value="">（不使用）</option>';
+  headers.forEach((h, i) => {
+    const n = document.createElement('option');
+    n.value = i; n.textContent = h || `列${i+1}`;
+    nameSel.appendChild(n);
+    const x = document.createElement('option');
+    x.value = i; x.textContent = h || `列${i+1}`;
+    idSel.appendChild(x);
+  });
+  headers.forEach((h, i) => {
+    if (/姓名|name|学生|成员|员工/i.test(h)) nameSel.value = i;
+    if (/编号|工号|学号|id|no|number|序号/i.test(h)) idSel.value = i;
+  });
+}
+
+setupDropzone('dz1','file1','fname1','cols1','nameCol1','idCol1','should','meta1');
+setupDropzone('dz2','file2','fname2','cols2','nameCol2','idCol2','signIn','meta2');
+
+function checkReady() {
+  document.getElementById('matchBtn').disabled = !(state.should.rows.length && state.signIn.rows.length);
+}
+
+// ============== 结果失效 ==============
+function invalidateResult() {
+  state.result = null;
+  state.appliedFuzzyShouldIdx.clear();
+  state.appliedFuzzySignInIdx.clear();
+  const card = document.getElementById('resultCard');
+  if (card.classList.contains('active')) card.classList.remove('active');
+  saveDraft();
+}
+document.getElementById('fuzzyOn').addEventListener('change', invalidateResult);
+document.querySelectorAll('input[name="idMode"]').forEach(r => r.addEventListener('change', invalidateResult));
+
+// ============== 三阶段匹配 ==============
+function match() {
+  if (typeof XLSX === 'undefined') { alert('Excel 库未加载，请检查 xlsx.full.min.js 是否存在'); return; }
+  const nameIdx1 = document.getElementById('nameCol1').value;
+  const idIdx1 = document.getElementById('idCol1').value;
+  const nameIdx2 = document.getElementById('nameCol2').value;
+  const idIdx2 = document.getElementById('idCol2').value;
+  state.fuzzyOn = document.getElementById('fuzzyOn').checked;
+  const mode = document.querySelector('input[name="idMode"]:checked').value;
+  state.idMode = mode;
+
+  // 构建有效行：name 非空才参与匹配；记录忽略行数
+  const shouldRows = state.should.rows.map((row, i) => ({
+    idx: i,
+    name: row[nameIdx1] !== undefined ? normalize(row[nameIdx1]) : '',
+    id: hasVal(row, idIdx1) ? normalizeId(row[idIdx1]) : '',
+    row
+  }));
+  const signInRows = state.signIn.rows.map((row, i) => ({
+    idx: i,
+    name: row[nameIdx2] !== undefined ? normalize(row[nameIdx2]) : '',
+    id: hasVal(row, idIdx2) ? normalizeId(row[idIdx2]) : '',
+    row
+  }));
+  const validShould = shouldRows.filter(r => r.name);
+  const validSignIn = signInRows.filter(r => r.name);
+  state.should.validCount = validShould.length;
+  state.should.ignoredCount = shouldRows.length - validShould.length;
+  state.signIn.validCount = validSignIn.length;
+  state.signIn.ignoredCount = signInRows.length - validSignIn.length;
+
+  // ========== 阶段 1：精确匹配 ==========
+  // 先按 id+name 联合
+  const sMapIdName = new Map();
+  validShould.forEach(r => { if (r.id) { const k = r.id + '|' + r.name; if (!sMapIdName.has(k)) sMapIdName.set(k, r); } });
+  const iMapIdName = new Map();
+  validSignIn.forEach(r => { if (r.id) { const k = r.id + '|' + r.name; if (!iMapIdName.has(k)) iMapIdName.set(k, r); } });
+  const matchedShould = new Set();
+  const matchedSignIn = new Set();
+
+  // id+name 联合精确命中
+  sMapIdName.forEach((sr, k) => {
+    if (iMapIdName.has(k)) {
+      matchedShould.add(sr.idx);
+      matchedSignIn.add(iMapIdName.get(k).idx);
+    }
+  });
+
+  // 再处理 id 缺失 / 姓名精确 场景（受 mode 控制）
+  validShould.forEach(sr => {
+    if (matchedShould.has(sr.idx)) return;
+    validSignIn.forEach(ir => {
+      if (matchedSignIn.has(ir.idx)) return;
+      if (sr.name !== ir.name) return;
+
+      if (mode === 'strict') {
+        // 严格：双方都有 id 且不同 → 放入待确认，不自动匹配
+        if (sr.id && ir.id && sr.id !== ir.id) return; // 不自动配对，交给模糊候选
+      } else if (mode === 'lenient') {
+        // 宽松：只有当一方缺 id 时才自动用姓名
+        if (sr.id && ir.id && sr.id !== ir.id) return; // 双方都有 id 且不同 → 待确认
+      }
+      // 姓名精确相等且满足模式要求 → 自动匹配
+      matchedShould.add(sr.idx);
+      matchedSignIn.add(ir.idx);
+    });
+  });
+
+  const absent = validShould.filter(r => !matchedShould.has(r.idx));
+  const extra = validSignIn.filter(r => !matchedSignIn.has(r.idx));
+
+  // ========== 阶段 2：模糊匹配候选 ==========
+  // 先收集 mode 留下的"双方都有 id 但不同、姓名相等"的条目 → 也归入候选
+  const idConflictCandidates = [];
+  if (mode !== 'nameonly') {
+    validShould.forEach(sr => {
+      if (matchedShould.has(sr.idx)) return;
+      validSignIn.forEach(ir => {
+        if (matchedSignIn.has(ir.idx)) return;
+        if (sr.name === ir.name && sr.id && ir.id && sr.id !== ir.id) {
+          idConflictCandidates.push({
+            shouldIdx: sr.idx, signInIdx: ir.idx,
+            reason: `姓名相同但编号不同（应到 ${sr.id} vs 签到 ${ir.id}）`,
+            score: 110
+          });
+        }
+      });
+    });
+  }
+
+  let fuzzyCandidates = [...idConflictCandidates];
+  if (state.fuzzyOn && absent.length && extra.length) {
+    const fuzzyRaw = [];
+    // 大文件优化：按姓名首字分组缩小笛卡尔积
+    const extraByName = new Map();
+    extra.forEach(ir => {
+      const first = ir.name.charAt(0) || '';
+      if (!extraByName.has(first)) extraByName.set(first, []);
+      extraByName.get(first).push(ir);
+    });
+    absent.forEach(sr => {
+      const first = sr.name.charAt(0) || '';
+      const pool = extraByName.get(first) || extra; // 首字匹配或全量兜底
+      pool.forEach(ir => {
+        if (sr.idx === ir.idx) return;
+        const hit = fuzzyCompare(sr, ir, mode);
+        if (hit) fuzzyRaw.push({ should: sr, signIn: ir, ...hit });
+      });
+    });
+    // 一对一贪心，按 score 降序
+    const usedShould = new Set(fuzzyCandidates.map(c => c.shouldIdx));
+    const usedSignIn = new Set(fuzzyCandidates.map(c => c.signInIdx));
+    fuzzyRaw.sort((a, b) => b.score - a.score);
+    fuzzyRaw.forEach(c => {
+      if (!usedShould.has(c.should.idx) && !usedSignIn.has(c.signIn.idx)) {
+        usedShould.add(c.should.idx);
+        usedSignIn.add(c.signIn.idx);
+        fuzzyCandidates.push({
+          shouldIdx: c.should.idx, signInIdx: c.signIn.idx,
+          reason: c.reason, score: c.score
+        });
+      }
+    });
+  }
+
+  state.result = { absent, extra, fuzzyCandidates };
+  state.appliedFuzzyShouldIdx.clear();
+  state.appliedFuzzySignInIdx.clear();
+  saveDraft();
+  renderResult();
+}
+
+function hasVal(row, idx) {
+  if (idx === '' || idx === null || idx === undefined) return false;
+  const v = row[idx];
+  return v !== undefined && v !== null && String(v).trim() !== '';
+}
+
+function fuzzyCompare(sr, ir, mode) {
+  // 姓名精确相等已在前面处理过，这里仅处理模糊
+  const sName = sr.name, iName = ir.name;
+  // 双方都有 id 且不同 → 严格/宽松模式下不自动模糊配对（留给 idConflictCandidates 已处理）
+  if (sr.id && ir.id && sr.id !== ir.id && mode !== 'nameonly') return null;
+
+  // 1. 编号归一化后相等（前导零差异）
+  if (sr.id && ir.id && sr.id === ir.id) {
+    const sRaw = rowIdRaw(sr), iRaw = rowIdRaw(ir);
+    if (sRaw && iRaw && sRaw !== iRaw) return { reason: `编号归一化匹配（${sRaw}→${sr.id} ≈ ${iRaw}→${ir.id}）`, score: 100 };
+  }
+  // 2. 姓名互相包含
+  if (sName.length >= 2 && iName.length >= 2) {
+    if ((sName.includes(iName) || iName.includes(sName)) && Math.abs(sName.length - iName.length) <= 2) {
+      return { reason: `姓名包含关系`, score: 80 };
+    }
+  }
+  // 3. 编辑距离 ≤ 1
+  if (sName.length >= 2 && iName.length >= 2 && Math.abs(sName.length - iName.length) <= 1) {
+    const d = levenshtein(sName, iName);
+    if (d <= 1) {
+      return { reason: `姓名相似（编辑距离=${d}）`, score: 70 - d * 5 };
+    }
+  }
+  return null;
+}
+function rowIdRaw(r) {
+  const idIdx = ['idCol1','idCol2'].find(n => document.getElementById(n) && document.getElementById(n).value !== '' && document.getElementById(n).value !== null);
+  if (!idIdx) return '';
+  // 不太好判断是哪个 target 行；从 state 反查：
+  for (const t of ['should','signIn']) {
+    const idx = document.getElementById('idCol' + (t==='should'?'1':'2')).value;
+    if (idx !== '' && idx !== null) {
+      const v = r.row[idx];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();
+    }
+  }
+  return '';
+}
+
+// ============== 应用模糊配对 ==============
+function applyFuzzy() {
+  const boxes = document.querySelectorAll('.fuzzy-check');
+  let any = false;
+  boxes.forEach(cb => {
+    if (cb.checked) {
+      state.appliedFuzzyShouldIdx.add(parseInt(cb.dataset.should, 10));
+      state.appliedFuzzySignInIdx.add(parseInt(cb.dataset.signin, 10));
+      any = true;
+    }
+  });
+  if (!any) return;
+  saveDraft();
+  renderResult();
+}
+
+// ============== 渲染（全部走 escapeHtml，XSS 安全） ==============
+function renderResult() {
+  const r = state.result;
+  if (!r) return;
+  const { absent, extra, fuzzyCandidates } = r;
+  const { appliedFuzzyShouldIdx, appliedFuzzySignInIdx } = state;
+
+  const effAbsent = absent.filter(x => !appliedFuzzyShouldIdx.has(x.idx));
+  const effExtra = extra.filter(x => !appliedFuzzySignInIdx.has(x.idx));
+
+  document.getElementById('resultCard').classList.add('active');
+  document.getElementById('statTotalShould').textContent = state.should.validCount;
+  const presentCount = state.signIn.validCount - effExtra.length;
+  document.getElementById('statPresent').textContent = presentCount;
+  document.getElementById('statAbsent').textContent = effAbsent.length;
+  document.getElementById('statExtra').textContent = effExtra.length;
+
+  // 待确认/模糊
+  const pendingFuzzy = fuzzyCandidates.filter(c => !appliedFuzzyShouldIdx.has(c.shouldIdx));
+  document.getElementById('statFuzzy').textContent = pendingFuzzy.length;
+  if (pendingFuzzy.length || state.appliedFuzzyShouldIdx.size) {
+    document.getElementById('statFuzzyWrap').style.display = '';
+  } else {
+    document.getElementById('statFuzzyWrap').style.display = 'none';
+  }
+  if (state.fuzzyOn && fuzzyCandidates.length) {
+    document.getElementById('fuzzySection').style.display = 'block';
+    renderFuzzyCandidates(fuzzyCandidates);
+  } else {
+    document.getElementById('fuzzySection').style.display = 'none';
+  }
+
+  // 忽略行（内部静默，不再对外展示）
+  // state.should.ignoredCount / state.signIn.ignoredCount 继续用于统计口径对齐
+
+  renderTable('absentList', effAbsent, 'should');
+  renderTable('extraList', effExtra, 'signIn');
+}
+
+function renderTable(containerId, list, targetKey) {
+  const el = document.getElementById(containerId);
+  if (!list.length) { el.innerHTML = '<div class="empty">✓ 无记录</div>'; return; }
+  const src = state[targetKey];
+  const headers = src.headers;
+  const maxCols = Math.min(headers.length, 8);
+
+  let html = '<table><thead><tr><th>#</th>';
+  for (let i = 0; i < maxCols; i++) html += '<th>' + escapeHtml(headers[i] || ('列'+(i+1))) + '</th>';
+  html += '</tr></thead><tbody>';
+  list.forEach((item, idx) => {
+    const rowData = item.row || item;
+    html += '<tr><td>' + (idx+1) + '</td>';
+    for (let i = 0; i < maxCols; i++) {
+      html += '<td>' + escapeHtml(rowData[i]) + '</td>';
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function renderFuzzyCandidates(allCandidates) {
+  const el = document.getElementById('fuzzyList');
+  const pending = allCandidates.filter(c => !state.appliedFuzzyShouldIdx.has(c.shouldIdx));
+  if (!pending.length) {
+    el.innerHTML = '<div class="empty">✓ 全部已处理</div>';
+    document.getElementById('applyFuzzyBtn').disabled = true;
+    return;
+  }
+  const nameIdx1 = document.getElementById('nameCol1').value;
+  const idIdx1 = document.getElementById('idCol1').value;
+  const nameIdx2 = document.getElementById('nameCol2').value;
+  const idIdx2 = document.getElementById('idCol2').value;
+
+  let html = '';
+  pending.forEach(c => {
+    const sr = state.should.rows[c.shouldIdx];
+    const ir = state.signIn.rows[c.signInIdx];
+    const sName = idSafe(sr, nameIdx1);
+    const sId = idIdx1 !== '' && idIdx1 !== null ? idSafe(sr, idIdx1) : '';
+    const iName = idSafe(ir, nameIdx2);
+    const iId = idIdx2 !== '' && idIdx2 !== null ? idSafe(ir, idIdx2) : '';
+    html += '<div class="fuzzy-candidate-row">' +
+      '<input type="checkbox" class="fuzzy-check" data-should="' + c.shouldIdx + '" data-signin="' + c.signInIdx + '">' +
+      '<span class="name">应到：' + escapeHtml(sName) + '</span>' +
+      (sId ? '<span class="sub">（编号 ' + escapeHtml(sId) + '）</span>' : '') +
+      '<span class="arrow">≈</span>' +
+      '<span class="name" style="color:#1a73e8">签到：' + escapeHtml(iName) + '</span>' +
+      (iId ? '<span class="sub">（编号 ' + escapeHtml(iId) + '）</span>' : '') +
+      '<span class="fuzzy-reason" style="margin-left:auto">' + escapeHtml(c.reason) + '</span>' +
+      '</div>';
+  });
+  el.innerHTML = html;
+  document.getElementById('applyFuzzyBtn').disabled = true;
+
+  document.querySelectorAll('.fuzzy-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const any = [...document.querySelectorAll('.fuzzy-check')].some(x => x.checked);
+      document.getElementById('applyFuzzyBtn').disabled = !any;
+    });
+  });
+}
+function idSafe(row, idx) {
+  if (idx === '' || idx === null || idx === undefined) return '';
+  const v = row[idx];
+  return v === undefined || v === null ? '' : String(v);
+}
+
+// ============== 导出（导出使用原始数据，XLSX 库内部处理，天然安全） ==============
+function exportResult() {
+  const r = state.result;
+  if (!r) { alert('请先执行匹配'); return; }
+  const { absent, extra, fuzzyCandidates } = r;
+  const aRows = absent.filter(x => !state.appliedFuzzyShouldIdx.has(x.idx)).map(x => x.row);
+  const eRows = extra.filter(x => !state.appliedFuzzySignInIdx.has(x.idx)).map(x => x.row);
+  const applied = fuzzyCandidates.filter(c => state.appliedFuzzyShouldIdx.has(c.shouldIdx));
+  const pending = fuzzyCandidates.filter(c => !state.appliedFuzzyShouldIdx.has(c.shouldIdx));
+
+  if (!aRows.length && !eRows.length && !applied.length && !pending.length) {
+    alert('没有可导出的结果'); return;
+  }
+  const wb = XLSX.utils.book_new();
+  if (aRows.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['序号', ...state.should.headers], ...aRows.map((r, i) => [i+1, ...r])]), '缺勤名单');
+  }
+  if (eRows.length) {
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['序号', ...state.signIn.headers], ...eRows.map((r, i) => [i+1, ...r])]), '额外签到');
+  }
+  if (fuzzyCandidates.length) {
+    const n1 = document.getElementById('nameCol1').value;
+    const i1 = document.getElementById('idCol1').value;
+    const n2 = document.getElementById('nameCol2').value;
+    const i2 = document.getElementById('idCol2').value;
+    const rows = [['序号', '应到姓名', '应到编号', '签到姓名', '签到编号', '匹配理由', '状态']];
+    const all = [...applied.map(c => ({ ...c, st: '✅ 已应用' })), ...pending.map(c => ({ ...c, st: '⏳ 待确认' }))];
+    all.forEach((c, i) => {
+      const s = state.should.rows[c.shouldIdx];
+      const t = state.signIn.rows[c.signInIdx];
+      rows.push([i+1,
+        idSafe(s, n1), i1!==''?idSafe(s, i1):'',
+        idSafe(t, n2), i2!==''?idSafe(t, i2):'',
+        c.reason, c.st]);
+    });
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '模糊/待确认');
+  }
+  XLSX.writeFile(wb, '匹配结果_' + new Date().toISOString().slice(0,10) + '.xlsx');
+}
+
+// ============== 本地草稿 ==============
+function saveDraft() {
+  try {
+    const draft = {
+      should: { fileName: state.should.fileName, headers: state.should.headers },
+      signIn: { fileName: state.signIn.fileName, headers: state.signIn.headers },
+      cols: {
+        nameCol1: document.getElementById('nameCol1').value,
+        idCol1: document.getElementById('idCol1').value,
+        nameCol2: document.getElementById('nameCol2').value,
+        idCol2: document.getElementById('idCol2').value,
+      },
+      fuzzyOn: document.getElementById('fuzzyOn').checked,
+      idMode: document.querySelector('input[name="idMode"]:checked')?.value || 'lenient',
+      applied: [...state.appliedFuzzyShouldIdx],
+      t: Date.now()
+    };
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+  } catch (e) {}
+}
+function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch(e) {} }
+function loadDraft() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (!d || !d.should) return;
+    // 文件名提示（无法恢复文件内容，浏览器安全限制）
+    if (d.should.fileName || d.signIn.fileName) {
+      document.getElementById('draftBanner').style.display = 'flex';
+      // 恢复列选择（headers 相同才安全）
+      if (state.should.headers.length && d.should.headers && arraysEqual(state.should.headers, d.should.headers)) {
+        document.getElementById('nameCol1').value = d.cols.nameCol1;
+        document.getElementById('idCol1').value = d.cols.idCol1;
+      }
+      if (state.signIn.headers.length && d.signIn.headers && arraysEqual(state.signIn.headers, d.signIn.headers)) {
+        document.getElementById('nameCol2').value = d.cols.nameCol2;
+        document.getElementById('idCol2').value = d.cols.idCol2;
+      }
+      document.getElementById('fuzzyOn').checked = d.fuzzyOn !== false;
+      if (d.idMode) {
+        const r = document.querySelector('input[name="idMode"][value="'+d.idMode+'"]');
+        if (r) r.checked = true;
+      }
+      saveDraft(); // 刷新时间
+    }
+  } catch (e) {}
+}
+function arraysEqual(a, b) {
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (String(a[i]) !== String(b[i])) return false;
+  return true;
+}
+
+// ============== 事件绑定 ==============
+document.getElementById('matchBtn').addEventListener('click', match);
+document.getElementById('applyFuzzyBtn').addEventListener('click', applyFuzzy);
+document.getElementById('exportBtn').addEventListener('click', exportResult);
+document.getElementById('resetBtn').addEventListener('click', () => {
+  state.should = { rows: [], headers: [], fileName: '', sheetName: '', validCount: 0, ignoredCount: 0 };
+  state.signIn = { rows: [], headers: [], fileName: '', sheetName: '', validCount: 0, ignoredCount: 0 };
+  state.result = null;
+  state.appliedFuzzyShouldIdx.clear();
+  state.appliedFuzzySignInIdx.clear();
+  ['file1','file2'].forEach(id => document.getElementById(id).value = '');
+  ['fname1','fname2'].forEach(id => document.getElementById(id).textContent = '');
+  ['meta1','meta2'].forEach(id => document.getElementById(id).textContent = '');
+  ['dz1','dz2'].forEach(id => { document.getElementById(id).classList.remove('has-file','err'); });
+  ['cols1','cols2'].forEach(id => document.getElementById(id).classList.remove('active'));
+  document.getElementById('resultCard').classList.remove('active');
+  document.getElementById('draftBanner').style.display = 'none';
+  clearDraft();
+  checkReady();
+});
+
+// 任意一个文件上传成功后尝试恢复草稿（列选择 + 开关）
+function tryLoadDraftIfReady() {
+  try {
+    const raw = localStorage.getItem(DRAFT_KEY);
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    if (!d || !d.cols) return;
+    if (state.should.headers.length && d.should && d.should.headers && arraysEqual(state.should.headers, d.should.headers)) {
+      document.getElementById('nameCol1').value = d.cols.nameCol1;
+      document.getElementById('idCol1').value = d.cols.idCol1;
+    }
+    if (state.signIn.headers.length && d.signIn && d.signIn.headers && arraysEqual(state.signIn.headers, d.signIn.headers)) {
+      document.getElementById('nameCol2').value = d.cols.nameCol2;
+      document.getElementById('idCol2').value = d.cols.idCol2;
+    }
+    // 开关恢复
+    document.getElementById('fuzzyOn').checked = d.fuzzyOn !== false;
+    if (d.idMode) {
+      const r = document.querySelector('input[name="idMode"][value="'+d.idMode+'"]');
+      if (r) r.checked = true;
+    }
+    // 有记录文件名则显示 banner
+    if (d.should.fileName || d.signIn.fileName) {
+      document.getElementById('draftBanner').style.display = 'flex';
+    }
+    saveDraft();
+  } catch (e) {}
+}
+</script>
+</body>
+</html>
