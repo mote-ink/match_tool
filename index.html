@@ -359,8 +359,24 @@ function populateSelects(headers, nameSel, idSel) {
   });
   headers.forEach((h, i) => {
     if (/姓名|name|学生|成员|员工/i.test(h)) nameSel.value = i;
-    if (/编号|工号|学号|id|no|number|序号/i.test(h)) idSel.value = i;
   });
+  // 编号列：按优先级分级，避免把"序号"这类行号当成编号
+  // 优先级1：学号/工号/编号/学工号（最明确的编号）
+  // 优先级2：id/no/number/编号
+  // 优先级3：序号（仅当没有更好选项时才用）
+  const idPriorities = [
+    /学号|工号|学工号|编号/i,
+    /\bid\b|\bno\b|number/i,
+    /序号/i
+  ];
+  for (const re of idPriorities) {
+    const i = headers.findIndex(h => re.test(h));
+    if (i !== -1 && nameSel.value !== String(i)) { idSel.value = i; break; }
+  }
+  // 如果只找到"序号"，再检查数据内容：看是否所有行值都是连续数字 1,2,3...
+  if (/序号/i.test(headers[idSel.value] || '')) {
+    idSel.title = '⚠ 自动识别为"序号"，如果有真正的学号/工号列请手动改';
+  }
 }
 
 setupDropzone('dz1','file1','fname1','cols1','nameCol1','idCol1','should','meta1');
